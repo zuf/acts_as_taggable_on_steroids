@@ -9,9 +9,10 @@ module ActiveRecord #:nodoc:
         def acts_as_taggable
           has_many :taggings, :as => :taggable, :dependent => :destroy, :include => :tag
           has_many :tags, :through => :taggings
+          has_many :tag_groups, :through => :tags
           
           before_save :save_cached_tag_list
-          after_save :save_tags
+          after_save :save_groupped_tags #:save_tags
           
           include ActiveRecord::Acts::Taggable::InstanceMethods
           extend ActiveRecord::Acts::Taggable::SingletonMethods
@@ -157,16 +158,33 @@ module ActiveRecord #:nodoc:
       module InstanceMethods
         def tag_list
           return @tag_list if @tag_list
-          
+
           if self.class.caching_tag_list? and !(cached_value = send(self.class.cached_tag_list_column_name)).nil?
             @tag_list = TagList.from(cached_value)
           else
             @tag_list = TagList.new(*tags.map(&:name))
           end
         end
+
+
+        def tag_list_for_group(tag_group_id)
+          return @tag_list[tag_group_id] if @tag_list && @tag_list[tag_group_id]
+
+          @tag_list = {}
+          #if self.class.caching_tag_list? and !(cached_value = send(self.class.cached_tag_list_column_name)).nil?
+          #  @tag_list[tag_group_id] = TagList.from(cached_value)
+          #else
+            @tag_list[tag_group_id] = TagList.new(*tags.for_tag_group(tag_group_id).map(&:name))
+          #end
+        end
+
         
         def tag_list=(value)
-          @tag_list = TagList.from(value)
+          #@tag_list = TagList.from(value)
+          @tag_list = {} #unless @tag_list
+          value.each do |tag_group_id, tags_string|
+            @tag_list[tag_group_id] = TagList.from(tags_string)
+          end
         end
         
         def save_cached_tag_list
@@ -192,6 +210,29 @@ module ActiveRecord #:nodoc:
             end
           end
           
+          true
+        end
+
+        def save_groupped_tags
+          return unless @tag_list
+
+          @tag_list.each do |tag_group_id, tags_strings|
+            tmp_tags = tags.for_tag_group(tag_group_id)
+            new_tag_names = tags_strings - tmp_tags.map(&:name)
+            old_tags = tmp_tags.reject { |tag| tags_strings.include?(tag.name) }
+
+            self.class.transaction do
+              if old_tags.any?
+                taggings.find(:all, :conditions => ["tag_id IN (?)", old_tags.map(&:id)]).each(&:destroy)
+                taggings.reset
+              end
+
+              new_tag_names.each do |new_tag_name|
+                tags << Tag.find_or_create_with_like_by_name_and_tag_group_id(new_tag_name, tag_group_id)
+              end
+            end
+          end
+
           true
         end
         
