@@ -8,7 +8,6 @@ class ActsAsTaggableMigration < ActiveRecord::Migration
    create_table :tag_groups do |t|
       t.column :name, :string
       t.column :model_name, :string
-      t.column :search_by_fields, :string
     end
     
     create_table :taggings do |t|

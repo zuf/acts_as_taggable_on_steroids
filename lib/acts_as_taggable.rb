@@ -228,7 +228,19 @@ module ActiveRecord #:nodoc:
               end
 
               new_tag_names.each do |new_tag_name|
-                tags << Tag.find_or_create_with_like_by_name_and_tag_group_id(new_tag_name, tag_group_id)
+#                tags << Tag.find_or_create_with_like_by_name_and_tag_group_id(new_tag_name, tag_group_id)
+                tag =  Tag.find_or_new_with_like_by_name_and_tag_group_id(new_tag_name, tag_group_id)
+                if tag.new_record?
+                  if tag.save
+                    tags << tag
+                  else
+                    tag_group = tag.tag_group
+                    self.errors.add("tags_list_#{tag_group.id}", tag.errors[:name])
+                    raise "Тег с названием #{tag.name} уже существует в группе #{tag_group.name}"
+                  end
+                else
+                  tags << tag
+                end
               end
             end
           end
